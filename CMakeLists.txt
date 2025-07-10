@@ -13,3 +13,5 @@ if ( PROJECT_IS_TOP_LEVEL )
         COPY_ON_ERROR SYMBOLIC
     )
 endif()
+
+add_subdirectory(gens)
