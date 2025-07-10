@@ -7,11 +7,14 @@ set(CMAKE_C_STANDARD_REQUIRED YES)
 project(trollcalc)
 
 if ( PROJECT_IS_TOP_LEVEL )
-    find(CREATE_LINK
+    file(CREATE_LINK
         ${CMAKE_BINARY_DIR}/compile_commands.json
         ${CMAKE_SOURCE_DIR}/compile_commands.json
         COPY_ON_ERROR SYMBOLIC
     )
 endif()
 
+include_directories(include)
+
 add_subdirectory(gens)
+add_subdirectory(log)

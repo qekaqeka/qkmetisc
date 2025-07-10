@@ -1,0 +1,1 @@
+/home/qeka/projects/ctftasks/trollcalc/log/log.h
