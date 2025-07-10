@@ -1,19 +1,7 @@
 #include "gen_base.h"
+#include "gen_base_types.h"
 #include <stdlib.h>
 #include <assert.h>
-
-struct gen {
-    void *priv;
-    struct task *(*generate)(void *priv);
-    void (*free_priv)(void *priv);
-};
-
-struct task {
-    void *priv;
-    char *(*get_question)(void *priv);
-    int (*verify)(void *priv, FILE *answer_stream);
-    void (*free_priv)(void *priv);
-};
 
 struct task *gen_generate(struct gen *gen) {
     assert(gen);
