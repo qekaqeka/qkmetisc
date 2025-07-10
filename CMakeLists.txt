@@ -18,3 +18,4 @@ include_directories(include)
 
 add_subdirectory(gens)
 add_subdirectory(log)
+add_subdirectory(utils)
