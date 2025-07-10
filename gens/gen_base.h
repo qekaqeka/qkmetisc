@@ -15,10 +15,10 @@ struct gen;
 
 //Only successors can create gen object
 [[gnu::malloc]]
-struct task *gen_generate(struct gen *gen);
-void gen_destroy(struct gen *gen);
+extern struct task *gen_generate(struct gen *gen);
+extern void gen_destroy(struct gen *gen);
 
 [[gnu::malloc]]
-char *task_get_question(struct task *task);
-int task_verify(const struct task *task, FILE *answer_stream);
-void task_destroy(struct task *task);
+extern char *task_get_question(struct task *task);
+extern int task_verify(const struct task *task, FILE *answer_stream);
+extern void task_destroy(struct task *task);
