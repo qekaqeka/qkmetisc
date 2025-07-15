@@ -1,5 +1,6 @@
 #pragma once
 
 #include "gen_base.h"
+#include "eq_flags.h"
 
-extern struct gen *eq_gen_create();
+extern struct gen *eq_gen_create(int minlen, int maxlen, int maxnr, eq_flags_t allowed);

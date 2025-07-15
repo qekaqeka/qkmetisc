@@ -11,6 +11,7 @@ struct gen {
 struct task {
     void *priv;
     char *(*get_question)(void *priv);
-    int (*verify)(void *priv, FILE *answer_stream);
+    void (*free_question)(char *q);
+    bool (*verify)(void *priv, FILE *answer_stream);
     void (*free_priv)(void *priv);
 };

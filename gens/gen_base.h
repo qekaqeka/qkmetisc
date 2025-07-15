@@ -9,8 +9,6 @@ enum task_type {
 
 struct task;
 
-typedef struct qs *(*gen_func_t)(void *);
-
 struct gen;
 
 //Only successors can create gen object
@@ -20,5 +18,6 @@ extern void gen_destroy(struct gen *gen);
 
 [[gnu::malloc]]
 extern char *task_get_question(struct task *task);
-extern int task_verify(const struct task *task, FILE *answer_stream);
+extern bool task_verify(const struct task *task, FILE *answer_stream);
+extern void task_free_question(struct task *task, char *question);
 extern void task_destroy(struct task *task);

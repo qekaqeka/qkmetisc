@@ -22,7 +22,13 @@ char *task_get_question(struct task *task) {
     return task->get_question(task->priv);
 }
 
-int task_verify(const struct task *task, FILE *answer_stream) {
+void task_free_question(struct task *task, char *question) {
+    assert(task);
+    assert(task->free_question);
+    return task->free_question(question);
+}
+
+bool task_verify(const struct task *task, FILE *answer_stream) {
     assert(task);
     assert(answer_stream);
     assert(task->verify);
