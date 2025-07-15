@@ -16,6 +16,8 @@ endif()
 
 include_directories(include)
 
-add_subdirectory(gens)
 add_subdirectory(log)
 add_subdirectory(utils)
+add_subdirectory(rcmem)
+add_subdirectory(list)
+add_subdirectory(gens)
