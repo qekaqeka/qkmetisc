@@ -1,0 +1,7 @@
+add_library(list INTERFACE)
+
+file(CREATE_LINK
+    ${CMAKE_CURRENT_SOURCE_DIR}/list.h
+    ${CMAKE_SOURCE_DIR}/include/list.h
+    COPY_ON_ERROR SYMBOLIC
+)
