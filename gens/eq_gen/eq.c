@@ -126,6 +126,7 @@ static int rand_eq_len(int minlen, int maxlen) {
     return chain_len;
 }
 
+[[gnu::const]]
 static eq_elem_gen_flags_t eq_flags_to_gen_flags(eq_flags_t flags) {
     eq_elem_gen_flags_t res = 0;
 
