@@ -44,9 +44,9 @@ typedef unsigned eq_elem_gen_flags_t;
 #define EQ_GEN_OP_SUB ((eq_elem_gen_flags_t)(1 << 1))
 #define EQ_GEN_OP_MUL ((eq_elem_gen_flags_t)(1 << 2))
 #define EQ_GEN_OP_ALL ((eq_elem_gen_flags_t)((EQ_GEN_OP_MUL << 1) - EQ_GEN_OP_SUM))
-#define EQ_GEN_BR_L ((eq_elem_gen_flags_t)(1 << 4))
-#define EQ_GEN_BR_R ((eq_elem_gen_flags_t)(1 << 5))
-#define EQ_GEN_NR ((eq_elem_gen_flags_t)(1 << 6))
+#define EQ_GEN_BR_L ((eq_elem_gen_flags_t)(1 << 3))
+#define EQ_GEN_BR_R ((eq_elem_gen_flags_t)(1 << 4))
+#define EQ_GEN_NR ((eq_elem_gen_flags_t)(1 << 5))
 
 static struct eq_elem *eq_elem_gen(eq_elem_gen_flags_t flags, int max_nr) {
     if ( max_nr <= 0 ) max_nr = RAND_MAX;

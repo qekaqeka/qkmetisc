@@ -65,7 +65,6 @@ static inline void _list_add_head_(struct list *list, struct list *item) {
     assert(list);
     assert(item);
     item->next = list;
-    item->prev = list->prev;
     assert(list->prev == NULL);
     list->prev = item;
 }
@@ -76,7 +75,6 @@ static inline void _list_add_tail_(struct list *list, struct list *item) {
     assert(list);
     assert(item);
     item->prev = list;
-    item->next = list->next;
     assert(list->next == NULL);
     list->next = item;
 }

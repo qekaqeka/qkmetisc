@@ -1,3 +1,9 @@
 #pragma once
 
+#ifndef __GNUC__
+#define __typeof__(X) typeof(X)
+#endif
+
 #define unused(X) ((void)(X))
+#define shiftptr(ptr, off) ((typeof(ptr))((char *)(ptr) + (off)))
+#define containerof(type, ptr, memb) ((type *)(shiftptr((ptr), -offsetof(type, memb))))
