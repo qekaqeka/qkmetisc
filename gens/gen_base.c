@@ -28,11 +28,11 @@ void task_free_question(struct task *task, char *question) {
     return task->free_question(question);
 }
 
-bool task_verify(const struct task *task, FILE *answer_stream) {
+enum answer_state task_check(const struct task *task, FILE *answer_stream) {
     assert(task);
     assert(answer_stream);
-    assert(task->verify);
-    return task->verify(task->priv, answer_stream);
+    assert(task->check);
+    return task->check(task->priv, answer_stream);
 }
 
 void task_destroy(struct task *task) {

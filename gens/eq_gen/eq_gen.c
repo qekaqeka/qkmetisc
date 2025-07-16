@@ -51,20 +51,27 @@ static void eq_free(void *p) {
     free(priv);
 }
 
-static bool eq_verify(void *p, FILE *fp) {
+static enum answer_state eq_check(void *p, FILE *fp) {
     assert(p);
     struct eq_task_priv *priv = p;
 
     if ( !priv->answer_cached ) {
         intmax_t right_answer;
-        if ( !eq_solve(priv->eq, &right_answer) ) return false;
+        if ( !eq_solve(priv->eq, &right_answer) ) return ANSWER_WRONG;
         priv->answer = right_answer;
         priv->answer_cached = true;
     }
 
     intmax_t answer;
-    if ( fscanf(fp, "%jd", &answer) != 1 ) return false;
-    return answer == priv->answer;
+    int r = fscanf(fp, "%jd", &answer);
+    if ( r == EOF ) return ANSWER_MORE;
+    if ( r != 1 ) return ANSWER_WRONG;
+
+    if ( answer == priv->answer ) {
+        return ANSWER_RIGHT;
+    } else {
+        return ANSWER_WRONG;
+    }
 }
 
 static void eq_free_question(char *q) {
@@ -90,7 +97,7 @@ static struct task *eq_gen_generate(void *priv) {
     task->priv = tpriv;
     task->get_question = eq_get_question;
     task->free_priv = eq_free;
-    task->verify = eq_verify;
+    task->check = eq_check;
     task->free_question = eq_free_question;
 
     return task;
