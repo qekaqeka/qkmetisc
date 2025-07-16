@@ -1,11 +1,15 @@
 #pragma once
 
 #include <stdio.h>
+#include <time.h>
 
-enum task_type {
-    TASK_INT_ANSWER,
-    TASK_STR_ANSWER
+enum answer_state {
+    ANSWER_WRONG,
+    ANSWER_MORE,
+    ANSWER_RIGHT
 };
+
+struct question;
 
 struct task;
 
@@ -17,7 +21,10 @@ extern struct task *gen_generate(struct gen *gen);
 extern void gen_destroy(struct gen *gen);
 
 [[gnu::malloc]]
-extern char *task_get_question(struct task *task);
+extern struct question *task_get_question(struct task *task);
 extern enum answer_state task_check(const struct task *task, FILE *answer_stream);
-extern void task_free_question(struct task *task, char *question);
+extern void task_free_question(struct task *task, struct question *question);
 extern void task_destroy(struct task *task);
+
+extern const char *question_get_text(const struct question *q);
+extern time_t question_get_timeout(const struct question *q);

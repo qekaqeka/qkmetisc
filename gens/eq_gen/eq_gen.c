@@ -9,6 +9,8 @@
 #include <errno.h>
 #include <string.h>
 
+#define EQ_ANSWER_TIMEOUT_SEC 1
+
 struct eq_gen_priv {
     int minlen;
     int maxlen;
@@ -18,36 +20,45 @@ struct eq_gen_priv {
 
 struct eq_task_priv {
     struct eq *eq;
-    char *__rc question;
-    bool question_cached;
+    char *__rc text;
+    bool text_cached;
     intmax_t answer;
     bool answer_cached;
 };
 
-static char *eq_get_question(void *p) { 
+static struct question *eq_get_question(void *p) { 
     struct eq_task_priv *priv = p;
 
-    if ( !priv->question_cached ) {
+    struct question *q = malloc(sizeof(struct question));
+    if ( q == NULL ) return NULL;
+
+    if ( !priv->text_cached ) {
         size_t size = eq_print_buffer_size(priv->eq);
-        if ( size == 0 ) return NULL;
-        char * __rc q = rcmem_alloc(size);
-        if ( q == NULL ) return NULL;
-        if ( !eq_print(priv->eq, q) ) {
-            rcmem_put(q);
-            return NULL;
+        if ( size == 0 ) goto free_q;
+        char * __rc text = rcmem_alloc(size);
+        if ( text == NULL ) goto free_q;;
+        if ( !eq_print(priv->eq, text) ) {
+            rcmem_put(text);
+            goto free_q;
         }
 
-        priv->question = q;
-        priv->question_cached = true;
+        priv->text = text;
+        priv->text_cached = true;
     }
 
-    return rcmem_take(priv->question);
+    q->text = rcmem_take(priv->text);
+    q->timeout = EQ_ANSWER_TIMEOUT_SEC;
+    return q;
+
+free_q:
+    free(q);
+    return NULL;
 }
 
 static void eq_free(void *p) {
     struct eq_task_priv *priv = p;
     eq_destroy(priv->eq);
-    if ( priv->question_cached ) rcmem_put(priv->question);
+    if ( priv->text_cached ) rcmem_put(priv->text);
     free(priv);
 }
 
@@ -74,8 +85,9 @@ static enum answer_state eq_check(void *p, FILE *fp) {
     }
 }
 
-static void eq_free_question(char *q) {
-    rcmem_put(q);
+static void eq_free_question(struct question *q) {
+    rcmem_put(q->text);
+    free(q);
 }
 
 static struct task *eq_gen_generate(void *priv) {
@@ -91,8 +103,8 @@ static struct task *eq_gen_generate(void *priv) {
     if ( tpriv->eq == NULL ) goto free_tpriv;
     tpriv->answer = 0;
     tpriv->answer_cached = false;
-    tpriv->question = NULL;
-    tpriv->question_cached = false;
+    tpriv->text = NULL;
+    tpriv->text_cached = false;
 
     task->priv = tpriv;
     task->get_question = eq_get_question;
