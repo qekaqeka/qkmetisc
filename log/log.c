@@ -1,4 +1,5 @@
 #include "log.h"
+#include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <assert.h>
@@ -94,6 +95,8 @@ static void vlog_printf(int flags, const char *fmt, va_list va) {
 }
 
 void log_msg(int flags, const char *fmt, ...) {
+    int e = errno;
+
     va_list arg;
 
     va_start(arg, fmt);
@@ -101,8 +104,12 @@ void log_msg(int flags, const char *fmt, ...) {
     vlog_printf(flags, fmt,arg);
 
     va_end(arg);
+
+    errno = e;
 }
 
 void vlog_msg(int flags, const char *fmt, va_list va) {
+    int e = errno;
     vlog_printf(flags, fmt, va);
+    errno = e;
 }
