@@ -11,7 +11,7 @@ AllowShortBlocksOnASingleLine: Always
 AllowShortCaseExpressionOnASingleLine: true
 AllowShortCaseLabelsOnASingleLine: true
 AllowShortEnumsOnASingleLine: false
-AllowShortFunctionsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: false
 AllowShortIfStatementsOnASingleLine: WithoutElse
 AllowShortLoopsOnASingleLine: true
 BreakAdjacentStringLiterals: true
@@ -34,7 +34,7 @@ KeepEmptyLines:
   AtStartOfBlock: false
   AtStartOfFile: false
 
-MaxEmptyLinesToKeep: 1
+MaxEmptyLinesToKeep: 2
 LineEnding: LF
 PointerAlignment: Right
 SortIncludes: CaseSensitive
