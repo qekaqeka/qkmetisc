@@ -1,5 +1,5 @@
-#include "gen_base.h"
-#include "gen_base_types.h"
+#include "gen.h"
+#include "gen_types.h"
 #include <stdlib.h>
 #include <assert.h>
 
@@ -22,12 +22,6 @@ struct question *task_get_question(struct task *task) {
     return task->get_question(task->priv);
 }
 
-void task_free_question(struct task *task, struct question *question) {
-    assert(task);
-    assert(task->free_question);
-    return task->free_question(question);
-}
-
 enum answer_state task_check(const struct task *task, FILE *answer_stream) {
     assert(task);
     assert(answer_stream);
@@ -43,9 +37,13 @@ void task_destroy(struct task *task) {
 }
 
 const char *question_get_text(const struct question *q) {
+    assert(q);
     return q->text;
 }
 
-time_t question_get_timeout(const struct question *q) {
-    return q->timeout;
+void question_destroy(struct question *q) {
+    assert(q);
+    assert(q->free_text);
+    q->free_text(q->text);
+    free(q);
 }

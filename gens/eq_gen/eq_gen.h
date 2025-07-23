@@ -1,6 +1,6 @@
 #pragma once
 
-#include "gen_base.h"
+#include "gen.h"
 #include "eq_flags.h"
 
 [[gnu::malloc]]

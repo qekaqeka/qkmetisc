@@ -1,15 +1,11 @@
 #include "eq_gen.h"
 #include <stdlib.h>
 #include "eq.h"
-#include "utils.h"
-#include "gen_base_types.h"
+#include "gen_types.h"
 #include <stdio.h>
 #include <assert.h>
 #include "rcmem.h"
-#include <errno.h>
 #include <string.h>
-
-#define EQ_ANSWER_TIMEOUT_SEC 1
 
 struct eq_gen_priv {
     int minlen;
@@ -26,33 +22,36 @@ struct eq_task_priv {
     bool answer_cached;
 };
 
+
+static void eq_free_text(char *text) {
+    rcmem_put(text);
+}
+
 static struct question *eq_get_question(void *p) { 
     struct eq_task_priv *priv = p;
 
-    struct question *q = malloc(sizeof(struct question));
-    if ( q == NULL ) return NULL;
-
     if ( !priv->text_cached ) {
+        assert(priv->text == NULL);
         size_t size = eq_print_buffer_size(priv->eq);
-        if ( size == 0 ) goto free_q;
+        if ( size == 0 ) return NULL;
         char * __rc text = rcmem_alloc(size);
-        if ( text == NULL ) goto free_q;;
+        text[size - 1] = '\0';
+        if ( text == NULL ) return NULL;
         if ( !eq_print(priv->eq, text) ) {
             rcmem_put(text);
-            goto free_q;
+            return NULL;
         }
 
-        priv->text = text;
+        priv->text = rcmem_move(text);
         priv->text_cached = true;
     }
 
-    q->text = rcmem_take(priv->text);
-    q->timeout = EQ_ANSWER_TIMEOUT_SEC;
-    return q;
+    struct question *q = malloc(sizeof(struct question));
+    if ( q == NULL ) return NULL; //At least we cached the text
 
-free_q:
-    free(q);
-    return NULL;
+    q->text = rcmem_take(priv->text);
+    q->free_text = eq_free_text;
+    return q;
 }
 
 static void eq_free(void *p) {
@@ -64,9 +63,11 @@ static void eq_free(void *p) {
 
 static enum answer_state eq_check(void *p, FILE *fp) {
     assert(p);
+    assert(fp);
     struct eq_task_priv *priv = p;
 
     if ( !priv->answer_cached ) {
+        assert(priv->answer == 0);
         intmax_t right_answer;
         if ( !eq_solve(priv->eq, &right_answer) ) return ANSWER_WRONG;
         priv->answer = right_answer;
@@ -84,12 +85,6 @@ static enum answer_state eq_check(void *p, FILE *fp) {
         return ANSWER_WRONG;
     }
 }
-
-static void eq_free_question(struct question *q) {
-    rcmem_put(q->text);
-    free(q);
-}
-
 static struct task *eq_gen_generate(void *priv) {
     struct eq_gen_priv *priv_ = priv;
 
@@ -110,7 +105,6 @@ static struct task *eq_gen_generate(void *priv) {
     task->get_question = eq_get_question;
     task->free_priv = eq_free;
     task->check = eq_check;
-    task->free_question = eq_free_question;
 
     return task;
 
