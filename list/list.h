@@ -31,15 +31,15 @@ static inline void *_list_get_next_(void *ptr, ptrdiff_t list_off) {
 
 #define list_get_next(ptr, list_member) ((typeof(ptr))_list_get_next_((ptr), offsetof(typeof(*ptr), list_member)))
 
-static inline void _list_init_(struct list *list) {
+static inline void list_init_list(struct list *list) {
     assert(list);
     list->prev = NULL;
     list->next = NULL;
 }
 
-#define list_init(ptr, mmbr) _list_init_(&(ptr)->mmbr)
+#define list_init(ptr, mmbr) list_init_list(&(ptr)->mmbr)
 
-static inline void _list_add_before_(struct list *list, struct list *item) {
+static inline void list_add_before_list(struct list *list, struct list *item) {
     assert(list);
     assert(item);
     item->next = list;
@@ -48,9 +48,9 @@ static inline void _list_add_before_(struct list *list, struct list *item) {
     list->prev = item;
 }
 
-#define list_add_before(ptr, item, mmbr) _list_add_before_(&(ptr)->mmbr, &(item)->mmbr)
+#define list_add_before(ptr, item, mmbr) list_add_before_list(&(ptr)->mmbr, &(item)->mmbr)
 
-static inline void _list_add_after_(struct list *list, struct list *item) {
+static inline void list_add_after_lift(struct list *list, struct list *item) {
     assert(list);
     assert(item);
     item->prev = list;
@@ -59,9 +59,9 @@ static inline void _list_add_after_(struct list *list, struct list *item) {
     list->next = item;
 }
 
-#define list_add_after(ptr, item, mmbr) _list_add_after_(&(ptr)->mmbr, &(item)->mmbr)
+#define list_add_after(ptr, item, mmbr) list_add_after_list(&(ptr)->mmbr, &(item)->mmbr)
 
-static inline void _list_add_head_(struct list *list, struct list *item) {
+static inline void list_add_head_list(struct list *list, struct list *item) {
     assert(list);
     assert(item);
     item->next = list;
@@ -69,9 +69,9 @@ static inline void _list_add_head_(struct list *list, struct list *item) {
     list->prev = item;
 }
 
-#define list_add_head(ptr, item, mmbr) _list_add_head_(&(ptr)->mmbr, &(item)->mmbr)
+#define list_add_head(ptr, item, mmbr) list_add_head_list(&(ptr)->mmbr, &(item)->mmbr)
 
-static inline void _list_add_tail_(struct list *list, struct list *item) {
+static inline void list_add_tail_list(struct list *list, struct list *item) {
     assert(list);
     assert(item);
     item->prev = list;
@@ -79,22 +79,23 @@ static inline void _list_add_tail_(struct list *list, struct list *item) {
     list->next = item;
 }
 
-#define list_add_tail(ptr, item, mmbr) _list_add_tail_(&(ptr)->mmbr, &(item)->mmbr)
+#define list_add_tail(ptr, item, mmbr) list_add_tail_list(&(ptr)->mmbr, &(item)->mmbr)
 
-static inline void _list_unlink_(struct list *item) {
+static inline void list_unlink_list(struct list *item) {
     assert(item);
     if ( item->prev != NULL ) item->prev->next = item->next;
     if ( item->next != NULL ) item->next->prev = item->prev;
+    list_init_list(item);
 }
 
-#define list_unlink(ptr, mmbr) _list_unlink_(&(ptr)->mmbr)
+#define list_unlink(ptr, mmbr) list_unlink_list(&(ptr)->mmbr)
 
-static inline bool _list_is_empty_(struct list *list) { 
+static inline bool list_is_empty_list(struct list *list) { 
     assert(list);
     return list->prev == NULL && list->next == NULL;
 }
 
-#define list_is_empty(ptr, mmbr) _list_is_empty_(&(ptr)->mmbr)
+#define list_is_empty(ptr, mmbr) list_is_empty_list(&(ptr)->mmbr)
 
 #define list_foreach(ptr, list_member, ITER_NAME) \
     for ( typeof(ptr) ITER_NAME = (ptr); ITER_NAME != NULL; ITER_NAME = list_get_next(ITER_NAME, list_member) )
