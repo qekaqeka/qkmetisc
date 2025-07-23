@@ -1,4 +1,4 @@
-add_library(rcmem OBJECT rcmem.c)
+add_library(rcmem STATIC rcmem.c)
 
 file(CREATE_LINK
     ${CMAKE_CURRENT_SOURCE_DIR}/rcmem.h

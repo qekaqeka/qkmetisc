@@ -18,9 +18,15 @@ add_compile_options(-Wall -Wextra -Werror)
 
 include_directories(include)
 
-add_subdirectory(log)
 add_subdirectory(utils)
-add_subdirectory(rcmem)
 add_subdirectory(list)
+add_subdirectory(listc)
+add_subdirectory(rcmem)
+add_subdirectory(log)
 add_subdirectory(gens)
+add_subdirectory(plots)
+add_subdirectory(server)
 add_subdirectory(test)
+
+add_executable(trollcalc main.c)
+target_link_libraries(trollcalc PRIVATE server troll_eq_plot log)

@@ -229,7 +229,9 @@ struct eq *eq_generate(int minlen, int maxlen, int maxnr, eq_flags_t allowed_ops
 
 free_eq_chain:
     if ( chain ) {
-        list_foreach_safe(chain, eq_elem_chain, iter) { free(iter); }
+        list_foreach_safe(chain, eq_elem_chain, iter) {
+            free(iter);
+        }
     }
     free(eq);
     return NULL;

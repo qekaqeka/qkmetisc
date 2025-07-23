@@ -9,3 +9,4 @@ file(CREATE_LINK
 )
 
 add_subdirectory(eq_gen)
+add_subdirectory(python_shellcode_gen)
