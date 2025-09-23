@@ -3,12 +3,13 @@
 #include <stdio.h>
 #include <stdarg.h>
 
-#define LOG_DEBUG       0b0000
-#define LOG_INFO        0b0001
-#define LOG_WARN        0b0010
-#define LOG_CRITICAL    0b0011
-#define LOG_COLOR    0b0100
-#define LOG_BANNER   0b1000
+#define LOG_DEBUG       0b00000
+#define LOG_INFO        0b00001
+#define LOG_WARN        0b00010
+#define LOG_CRITICAL    0b00011
+#define LOG_NO_TIME     0b10000
+#define LOG_NO_COLOR    0b00100
+#define LOG_NO_BANNER   0b01000
 
 extern void log_set_flags(int flags);
 extern int log_get_flags();
