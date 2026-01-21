@@ -38,7 +38,7 @@ Gens generate tasks (for example eq_gen), which give questions. Questions have t
 
 The problem that this project solves doesn't really exist. Nobody wants a framework to create hypersonic speed handlers for network CTF tasks. Also you need to write your CTF task code in C, not in python (which is much more convenient). You need to do this inside the source tree. I think it's obvious why it's a terrible design. Even Linux kernel supports modules, but this project doesnt' :-).
 
-If you read source code of this project, you will notice that this project is literally a reinvention of the wheel. The only thing which I didn't reinvent is GMP, which is used in eq_gen code. The reason for it is that this project is educational. And I have "educated" enough
+If you read source code of this project, you will notice that this project is literally reinvention of the wheel. The only thing which I didn't reinvent is GMP, which is used in eq_gen code. The reason for it is that this project is educational. And I have "educated" enough
 
 
 

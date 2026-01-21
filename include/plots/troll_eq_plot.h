@@ -1,1 +1,0 @@
-/home/qeka/projects/ctftasks/qkmetisc/plots/troll_eq_plot/troll_eq_plot.h

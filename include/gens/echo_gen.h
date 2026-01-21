@@ -1,1 +1,0 @@
-/home/qeka/projects/ctftasks/qkmetisc/gens/echo_gen/echo_gen.h

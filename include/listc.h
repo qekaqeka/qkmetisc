@@ -1,1 +1,0 @@
-/home/qeka/projects/ctftasks/qkmetisc/listc/listc.h

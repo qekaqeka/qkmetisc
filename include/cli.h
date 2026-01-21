@@ -1,1 +1,0 @@
-/home/qeka/projects/ctftasks/qkmetisc/cli/cli.h

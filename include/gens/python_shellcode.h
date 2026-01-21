@@ -1,1 +1,0 @@
-/home/qeka/projects/ctftasks/qkmetisc/gens/python_shellcode_gen/python_shellcode_gen.h

@@ -1,1 +1,0 @@
-/home/qeka/projects/ctftasks/qkmetisc/gens/eq_gen/eq_gen.h
