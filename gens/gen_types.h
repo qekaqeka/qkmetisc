@@ -1,7 +1,6 @@
 #pragma once
 
 #include <stdio.h>
-#include <time.h>
 
 struct gen {
     void *priv;

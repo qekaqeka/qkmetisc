@@ -5,20 +5,21 @@
 #include <stdio.h>
 #include <assert.h>
 #include "rcmem.h"
+#include <stdbool.h>
 #include <string.h>
 
 struct eq_gen_priv {
     int minlen;
     int maxlen;
-    int maxnr;
+    mpz_t maxnr;
     eq_flags_t allowed;
 };
 
 struct eq_task_priv {
     struct eq *eq;
-    char *__rc text;
+    char *__rc text_rc;
     bool text_cached;
-    intmax_t answer;
+    mpz_t answer;
     bool answer_cached;
 };
 
@@ -31,7 +32,7 @@ static struct question *eq_get_question(void *p) {
     struct eq_task_priv *priv = p;
 
     if ( !priv->text_cached ) {
-        assert(priv->text == NULL);
+        assert(priv->text_rc == NULL);
         size_t size = eq_print_buffer_size(priv->eq);
         if ( size == 0 ) return NULL;
         char * __rc text = rcmem_alloc(size);
@@ -42,23 +43,24 @@ static struct question *eq_get_question(void *p) {
             return NULL;
         }
 
-        priv->text = rcmem_move(text);
+        priv->text_rc = rcmem_move(text);
         priv->text_cached = true;
     }
 
     struct question *q = malloc(sizeof(struct question));
     if ( q == NULL ) return NULL; //At least we cached the text
 
-    q->text = rcmem_take(priv->text);
+    q->text = rcmem_take(priv->text_rc);
     q->free_text = eq_free_text;
     return q;
 }
 
-static void eq_free(void *p) {
-    struct eq_task_priv *priv = p;
-    eq_destroy(priv->eq);
-    if ( priv->text_cached ) rcmem_put(priv->text);
-    free(priv);
+static void eq_free(void *priv) {
+    struct eq_task_priv *p = priv;
+    mpz_clear(p->answer);
+    eq_destroy(p->eq);
+    if ( p->text_cached ) rcmem_put(p->text_rc);
+    free(p);
 }
 
 static enum answer_state eq_check(void *p, FILE *fp) {
@@ -67,19 +69,22 @@ static enum answer_state eq_check(void *p, FILE *fp) {
     struct eq_task_priv *priv = p;
 
     if ( !priv->answer_cached ) {
-        assert(priv->answer == 0);
-        intmax_t right_answer;
-        if ( !eq_solve(priv->eq, &right_answer) ) return ANSWER_WRONG;
-        priv->answer = right_answer;
+        if ( !eq_solve(priv->eq, priv->answer) ) return ANSWER_WRONG;
         priv->answer_cached = true;
     }
 
-    intmax_t answer;
-    int r = fscanf(fp, "%jd", &answer);
-    if ( r == EOF ) return ANSWER_MORE;
-    if ( r != 1 ) return ANSWER_WRONG;
+    mpz_t answer;
+    mpz_init(answer);
+    int r = mpz_inp_str(answer, fp, 10);
+    if ( r == 0 ) {
+        mpz_clear(answer);
+        return ANSWER_WRONG;
+    }
 
-    if ( answer == priv->answer ) {
+    int cmp = mpz_cmp(answer, priv->answer);
+    mpz_clear(answer);
+
+    if ( cmp == 0 ) {
         return ANSWER_RIGHT;
     } else {
         return ANSWER_WRONG;
@@ -96,9 +101,9 @@ static struct task *eq_gen_generate(void *priv) {
 
     tpriv->eq = eq_generate(priv_->minlen, priv_->maxlen, priv_->maxnr, priv_->allowed);
     if ( tpriv->eq == NULL ) goto free_tpriv;
-    tpriv->answer = 0;
+    mpz_init(tpriv->answer);
     tpriv->answer_cached = false;
-    tpriv->text = NULL;
+    tpriv->text_rc = NULL;
     tpriv->text_cached = false;
 
     task->priv = tpriv;
@@ -116,11 +121,13 @@ free_task:
 }
 
 static void eq_gen_free_priv(void *priv) {
+    struct eq_gen_priv *p = priv;
+    mpz_clear(p->maxnr);
     free(priv);
     return;
 }
 
-struct gen *eq_gen_create(int minlen, int maxlen, int maxnr, eq_flags_t allowed) {
+struct gen *eq_gen_create(int minlen, int maxlen, unsigned maxnr, eq_flags_t allowed) {
     struct gen *eq_gen = malloc(sizeof(struct gen));
     if ( eq_gen == NULL ) return NULL;
 
@@ -129,7 +136,7 @@ struct gen *eq_gen_create(int minlen, int maxlen, int maxnr, eq_flags_t allowed)
 
     priv->minlen = minlen;
     priv->maxlen = maxlen;
-    priv->maxnr = maxnr;
+    mpz_init_set_ui(priv->maxnr, maxnr);
     priv->allowed = allowed;
 
     eq_gen->priv = priv;

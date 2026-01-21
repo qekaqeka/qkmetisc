@@ -1,1 +1,1 @@
-/home/qeka/projects/ctftasks/trollcalc/gens/gen.h
+/home/qeka/projects/ctftasks/qkmetisc/gens/gen.h

@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <stddef.h>
+#include <stdbool.h>
 #include "utils.h"
 
 struct list {
@@ -75,16 +76,16 @@ static inline void list_add_head_list(struct list *list, struct list *item) {
     list->prev = item;
 }
 
-#define list_add_head(ptr, item, mmbr) list_add_head_list(&(ptr)->mmbr, &(item)->mmbr)
+#define list_add_head(head, item, list_mmbr) list_add_head_list(&(head)->list_mmbr, &item->list_mmbr)
 
-#define list_add_item_front(ptr, head, tail, item, mmbr) \
+#define list_add_item_front(head, tail, item, mmbr) \
     ({                                                   \
-        if ( (ptr)->head == NULL ) {                     \
-            (ptr)->head = item;                          \
-            (ptr)->tail = item;                          \
+        if ( *(head) == NULL ) {                     \
+            *(head) = item;                          \
+            *(tail) = item;                          \
         } else {                                         \
-            list_add_head((ptr)->head, item, mmbr);      \
-            (ptr)->head = item;                          \
+            list_add_head(*(head), item, mmbr);      \
+            *(head) = item;                          \
         }                                                \
     })
 
@@ -96,16 +97,16 @@ static inline void list_add_tail_list(struct list *list, struct list *item) {
     list->next = item;
 }
 
-#define list_add_tail(ptr, item, mmbr) list_add_tail_list(&(ptr)->mmbr, &(item)->mmbr)
+#define list_add_tail(tail, item, list_mmbr) list_add_tail_list(&(tail)->list_mmbr, &item->list_mmbr)
 
-#define list_add_item_back(ptr, head, tail, item, mmbr) \
+#define list_add_item_back(head, tail, item, mmbr) \
     ({                                                  \
-        if ( (ptr)->head == NULL ) {                    \
-            (ptr)->head = item;                         \
-            (ptr)->tail = item;                         \
+        if ( *(head) == NULL ) {                    \
+            *(head) = item;                         \
+            *(tail) = item;                         \
         } else {                                        \
-            list_add_tail((ptr)->tail, item, mmbr);     \
-            (ptr)->tail = item;                         \
+            list_add_tail(*(tail), item, mmbr);     \
+            *(tail) = item;                         \
         }                                               \
     })
 
@@ -116,7 +117,22 @@ static inline void list_unlink_list(struct list *item) {
     list_init_list(item);
 }
 
+
 #define list_unlink(ptr, mmbr) list_unlink_list(&(ptr)->mmbr)
+
+#define list_remove_item(head, tail, item, mmbr)              \
+    ({                                                             \
+        if ( *(head) == *(tail) && *(head) == (item) ) { \
+            *(head) = NULL;                                    \
+            *(tail) = NULL;                                    \
+        } else if ( *(head) == (item) ) {                        \
+            *(head) = list_get_next((item), mmbr);               \
+        } else if ( *(tail) == (item) ) {                        \
+            *tail = list_get_prev((item), mmbr);               \
+        } else {                                                          \
+            list_unlink((item), mmbr);  \
+        } \
+    })
 
 static inline bool list_is_empty_list(struct list *list) {
     assert(list);
@@ -124,6 +140,8 @@ static inline bool list_is_empty_list(struct list *list) {
 }
 
 #define list_is_empty(ptr, mmbr) list_is_empty_list(&(ptr)->mmbr)
+
+#define list_no_items(head, tail) (*(head) == NULL && (assert(*(tail) == NULL), true))
 
 #define list_foreach(ptr, list_member, ITER_NAME) \
     for ( typeof(ptr) ITER_NAME = (ptr); ITER_NAME != NULL; ITER_NAME = list_get_next(ITER_NAME, list_member) )

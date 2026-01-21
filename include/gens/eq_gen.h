@@ -1,1 +1,1 @@
-/home/qeka/projects/ctftasks/trollcalc/gens/eq_gen/eq_gen.h
+/home/qeka/projects/ctftasks/qkmetisc/gens/eq_gen/eq_gen.h

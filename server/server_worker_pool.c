@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdlib.h>
+#include "log.h"
 #include "plot.h"
 #include "server_worker.h"
 
@@ -19,7 +20,8 @@ struct server_worker_pool *server_worker_pool_create(unsigned workers_nr) {
 
     for ( unsigned i = 0; i < workers_nr; i++ ) {
         pool->workers[i] = server_worker_create();
-        if ( pool->workers[i] == NULL ) {
+
+        if ( pool->workers[i] == NULL ) { // destroy created workers
             for ( unsigned j = 0; j < i; j++ ) {
                 server_worker_destroy(pool->workers[j]);
                 goto free_pool;
@@ -27,6 +29,7 @@ struct server_worker_pool *server_worker_pool_create(unsigned workers_nr) {
         }
     }
 
+    log_msg(LOG_DEBUG, "Worker pool %p was created\n", pool);
     return pool;
 
 free_pool:
@@ -56,5 +59,7 @@ void server_worker_pool_destroy(struct server_worker_pool *pool) {
     assert(pool);
     for ( unsigned i = 0; i < pool->workers_nr; i++ ) server_worker_destroy(pool->workers[i]);
     free(pool->workers);
+
+    log_msg(LOG_DEBUG, "Worker pool %p was destroyed\n", pool);
     free(pool);
 }

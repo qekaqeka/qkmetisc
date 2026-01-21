@@ -1,4 +1,4 @@
-add_library(python_shellcode_gen STATIC python_shellcode_gen.c)
+add_library(python_shellcode_gen SHARED python_shellcode_gen.c)
 target_link_libraries(python_shellcode_gen PRIVATE utils rcmem)
 
 file(CREATE_LINK

@@ -1,1 +1,1 @@
-/home/qeka/projects/ctftasks/trollcalc/utils/pthread_assert.h
+/home/qeka/projects/ctftasks/qkmetisc/utils/pthread_assert.h

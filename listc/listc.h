@@ -1,6 +1,7 @@
 #pragma once
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include "utils.h"
 
@@ -46,13 +47,13 @@ static inline void listc_add_before_listc(struct listc *listc, struct listc *ite
 
 #define listc_add_before(ptr, item, mmbr) listc_add_before_listc(&(ptr)->mmbr, &(item)->mmbr)
 
-#define listc_add_item_front(ptr, mmbr, item, listc_mmbr)      \
+#define listc_add_item_front(listc, item, listc_mmbr)      \
     do {                                                       \
-        if ( (ptr)->mmbr == NULL ) {                           \
-            (ptr)->mmbr = (item);                              \
+        if ( *(listc) == NULL ) {                           \
+            *(listc) = (item);                              \
         } else {                                               \
-            listc_add_before((ptr)->mmbr, (item), listc_mmbr); \
-            (ptr)->mmbr = (item);                              \
+            listc_add_before(*(listc), (item), listc_mmbr); \
+            *(listc) = (item);                              \
         }                                                      \
     } while ( 0 )
 
@@ -67,12 +68,12 @@ static inline void listc_add_after_listc(struct listc *listc, struct listc *item
 
 #define listc_add_after(ptr, item, mmbr) listc_add_after_listc(&(ptr)->mmbr, &(item)->mmbr)
 
-#define listc_add_item_back(ptr, mmbr, item, listc_mmbr)       \
+#define listc_add_item_back(listc, item, listc_mmbr)       \
     do {                                                       \
-        if ( (ptr)->mmbr == NULL ) {                           \
-            (ptr)->mmbr = (item);                              \
+        if ( *(listc) == NULL ) {                           \
+            *(listc) = (item);                              \
         } else {                                               \
-            listc_add_before((ptr)->mmbr, (item), listc_mmbr); \
+            listc_add_before(*(listc), (item), listc_mmbr); \
         }                                                      \
     } while ( 0 )
 
@@ -92,28 +93,34 @@ static inline bool listc_is_empty_listc(struct listc *listc) {
 
 #define listc_is_empty(ptr, mmbr) listc_is_empty_listc(&(ptr)->mmbr)
 
-#define listc_remove_item(ptr, mmbr, item, listc_mmbr)            \
+#define listc_remove_item(listc, item, listc_mmbr)            \
     do {                                                          \
-        if ( (ptr)->mmbr == NULL ) break;                         \
-        if ( (ptr)->mmbr == (item) ) {                            \
+        if ( *(listc) == NULL ) break;                         \
+        if ( *(listc) == (item) ) {                            \
             if ( listc_is_empty((item), listc_mmbr) ) {           \
-                (ptr)->mmbr = NULL;                               \
+                *(listc) = NULL;                               \
             } else {                                              \
-                (ptr)->mmbr = listc_get_next((item), listc_mmbr); \
+                *(listc) = listc_get_next((item), listc_mmbr); \
             }                                                     \
         }                                                         \
         listc_unlink((item), listc_mmbr);                         \
     } while ( 0 )
 
-/*
-#define listc_foreach(ptr, listc_member, ITER_NAME) \
-    for ( typeof(ptr) ITER_NAME = (ptr); ITER_NAME != NULL; ITER_NAME = listc_get_next(ITER_NAME, listc_member) )
-#define listc_foreach_safe(ptr, listc_member, ITER_NAME)                                                             \
-    for ( typeof(ptr) ITER_NAME = (ptr), ITER_NAME##_safe_ = listc_get_next((ptr), listc_member); ITER_NAME != NULL; \
-          (ITER_NAME = ITER_NAME##_safe_) ? (ITER_NAME##_safe_ = listc_get_next(ITER_NAME##_safe_, listc_member)) : 0 )
-#define listc_foreach_back(ptr, listc_member, ITER_NAME) \
-    for ( typeof(ptr) ITER_NAME = (ptr); ITER_NAME != NULL; ITER_NAME = listc_get_prev(ITER_NAME, listc_member) )
-#define listc_foreach_back_safe(ptr, listc_member, ITER_NAME)                                                        \
-    for ( typeof(ptr) ITER_NAME = (ptr), ITER_NAME##_safe_ = listc_get_prev((ptr), listc_member); ITER_NAME != NULL; \
-          (ITER_NAME = ITER_NAME##_safe_) ? (ITER_NAME##_safe_ = listc_get_prev(ITER_NAME##_safe_, listc_member)) : 0 )
-*/
+#define LISTC_FOREACH_START(ptr, listc_member, ITER_NAME) \
+    {                                                     \
+        typeof(ptr) ITER_NAME = (ptr);                    \
+        do {
+#define LISTC_FOREACH_END(ptr, listc_member, ITER_NAME)                                               \
+    }                                                                                                \
+    while ( ITER_NAME = listc_get_next(ITER_NAME, listc_member), ITER_NAME != (ptr) ); \
+    }
+
+#define LISTC_FOREACH_START_SAFE(ptr, listc_member, ITER_NAME)                   \
+    {                                                                            \
+        typeof(ptr) ITER_NAME = (ptr);                                           \
+        typeof(ptr) ITER_NAME##_next_ = listc_get_next(ITER_NAME, listc_member); \
+        do {
+#define LISTC_FOREACH_END_SAFE(ptr, listc_member, ITER_NAME)                                                     \
+        }                                                                                                           \
+    while ( ITER_NAME = ITER_NAME##_next_, (ITER_NAME != (ptr) && (ITER_NAME##_next_ = listc_get_next(ITER_NAME##_next_, listc_member), 1)) );                                                                 \
+    }

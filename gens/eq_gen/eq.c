@@ -1,11 +1,13 @@
 #include "eq.h"
 #include <errno.h>
+#include <gmp.h>
 #include <inttypes.h>
-#include <stdckdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include <string.h>
 #include "list.h"
+#include "utils.h"
 
 enum eq_elem_type {
     EQ_OP,
@@ -27,7 +29,7 @@ enum eq_br {
 struct eq_elem {
     union {
         enum eq_op op;
-        int nr;
+        mpz_t nr;
         enum eq_br br;
     } data;
     enum eq_elem_type type;
@@ -48,24 +50,28 @@ typedef unsigned eq_elem_gen_flags_t;
 #define EQ_GEN_BR_R ((eq_elem_gen_flags_t)(1 << 4))
 #define EQ_GEN_NR ((eq_elem_gen_flags_t)(1 << 5))
 
-static struct eq_elem *eq_elem_gen(eq_elem_gen_flags_t flags, int max_nr) {
-    if ( max_nr <= 0 ) max_nr = RAND_MAX;
-
-    int popcount = __builtin_popcount(flags);
+static unsigned long bitmask_choose(unsigned long bitmask) {
+    int popcount = __builtin_popcount(bitmask);
     if ( popcount == 0 ) {
-        assert(0);
-        return NULL;
+        assert(0); //flags shouldn't be zero
+        return 0ull;
     }
 
     int index = rand() % popcount;
-    eq_elem_gen_flags_t mask = flags;
+    eq_elem_gen_flags_t mask = bitmask;
 
     for ( int i = 0; i < index; i++ ) {
         int one_index = __builtin_ffs(mask);
         mask &= ~(1 << (one_index - 1));   // clear bit
     }
 
-    eq_elem_gen_flags_t chosen = (1 << (__builtin_ffs(mask) - 1));
+    unsigned long chosen = (1 << (__builtin_ffs(mask) - 1));
+
+    return chosen;
+}
+
+static struct eq_elem *eq_elem_gen(eq_elem_gen_flags_t flags, gmp_randstate_t st, const mpz_t max) {
+    eq_elem_gen_flags_t chosen = bitmask_choose(flags);
 
     struct eq_elem *elem = malloc(sizeof(struct eq_elem));
     if ( elem == NULL ) return NULL;
@@ -93,7 +99,8 @@ static struct eq_elem *eq_elem_gen(eq_elem_gen_flags_t flags, int max_nr) {
             elem->type = EQ_BR;
             break;
         case EQ_GEN_NR:
-            elem->data.nr = rand() % max_nr;
+            mpz_init(elem->data.nr);
+            mpz_urandomm(elem->data.nr, st, max);
             elem->type = EQ_NR;
             break;
         default:
@@ -103,6 +110,13 @@ static struct eq_elem *eq_elem_gen(eq_elem_gen_flags_t flags, int max_nr) {
     }
 
     return elem;
+}
+
+void eq_elem_destroy(struct eq_elem *el) {
+    if ( el->type == EQ_NR ) {
+        mpz_clear(el->data.nr);
+    }
+    free(el);
 }
 
 static int rand_eq_len(int minlen, int maxlen) {
@@ -142,7 +156,7 @@ static eq_elem_gen_flags_t eq_flags_to_gen_flags(eq_flags_t flags) {
     return res;
 }
 
-struct eq *eq_generate(int minlen, int maxlen, int maxnr, eq_flags_t allowed_ops) {
+struct eq *eq_generate(int minlen, int maxlen, const mpz_t max, eq_flags_t allowed_ops) {
     eq_elem_gen_flags_t allowed = eq_flags_to_gen_flags(allowed_ops);
     if ( allowed == 0 ) return NULL;
 
@@ -165,6 +179,10 @@ struct eq *eq_generate(int minlen, int maxlen, int maxnr, eq_flags_t allowed_ops
     bool op_possible = false;
     bool nr_possible = true;
 
+    gmp_randstate_t st;
+    gmp_randinit_default(st);
+    gmp_randseed_ui(st, time(NULL));
+
     for ( int i = 0; i < chain_len; i++ ) {
         if ( br_l_possible ) flags |= EQ_GEN_BR_L;
         if ( br_r_possible ) flags |= EQ_GEN_BR_R;
@@ -174,8 +192,8 @@ struct eq *eq_generate(int minlen, int maxlen, int maxnr, eq_flags_t allowed_ops
         // nr is always allowed
         if ( nr_possible ) flags |= EQ_GEN_NR;
 
-        struct eq_elem *new = eq_elem_gen(flags, maxnr);
-        if ( new == NULL ) goto free_eq_chain;
+        struct eq_elem *new = eq_elem_gen(flags, st, max);
+        if ( new == NULL ) goto fallback;
 
         if ( new->type == EQ_OP ) {
             op_avail--;
@@ -223,14 +241,17 @@ struct eq *eq_generate(int minlen, int maxlen, int maxnr, eq_flags_t allowed_ops
         }
     }
 
+    gmp_randclear(st);
+
     eq->eq_elems = chain;
 
     return eq;
 
-free_eq_chain:
+fallback:
+    gmp_randclear(st);
     if ( chain ) {
         list_foreach_safe(chain, eq_elem_chain, iter) {
-            free(iter);
+            eq_elem_destroy(iter);
         }
     }
     free(eq);
@@ -252,11 +273,11 @@ free_eq_chain:
  *  ( EXPRESSION )
  */
 
-static bool eq_get_primary(struct eq_elem **chain, intmax_t *out);
-static bool eq_get_term(struct eq_elem **chain, intmax_t *out);
-static bool eq_get_expression(struct eq_elem **chain, intmax_t *out);
+static int eq_get_primary(struct eq_elem **chain, mpz_t out);
+static int eq_get_term(struct eq_elem **chain, mpz_t out);
+static int eq_get_expression(struct eq_elem **chain, mpz_t out);
 
-static bool eq_get_primary(struct eq_elem **chain, intmax_t *out) {
+static int eq_get_primary(struct eq_elem **chain, mpz_t out) {
     assert(chain);
     struct eq_elem *elem = *chain;
 
@@ -267,7 +288,7 @@ static bool eq_get_primary(struct eq_elem **chain, intmax_t *out) {
 
     if ( elem->type == EQ_NR ) {
         *chain = list_get_next(elem, eq_elem_chain);
-        *out = (intmax_t)elem->data.nr;
+        mpz_set(out, elem->data.nr);
         return true;
     } else if ( elem->type == EQ_BR ) {
         if ( elem->data.br != EQ_BR_L ) {
@@ -276,21 +297,26 @@ static bool eq_get_primary(struct eq_elem **chain, intmax_t *out) {
         }
 
         *chain = list_get_next(elem, eq_elem_chain);
-        intmax_t res;
-        if ( eq_get_expression(chain, &res) ) {
+        mpz_t res;
+        mpz_init(res);
+        if ( eq_get_expression(chain, res) ) {
             elem = *chain;
             if ( elem == NULL ) {
                 errno = EILSEQ;
+                mpz_clear(res);
                 return false;
             }
             if ( elem->type != EQ_BR || elem->data.br != EQ_BR_R ) {
                 errno = EILSEQ;
+                mpz_clear(res);
                 return false;
             }
             *chain = list_get_next(elem, eq_elem_chain);
-            *out = res;
+            mpz_set(out, res);
+            mpz_clear(res);
             return true;
         } else {
+            mpz_clear(res);
             return false;
         }
     } else {
@@ -299,101 +325,116 @@ static bool eq_get_primary(struct eq_elem **chain, intmax_t *out) {
     }
 }
 
-static bool eq_get_term(struct eq_elem **chain, intmax_t *out) {
+static int eq_get_term(struct eq_elem **chain, mpz_t out) {
     assert(chain);
 
-    intmax_t left, right;
+    mpz_t left, right;
+    mpz_inits(left, right, NULL);
 
-    if ( !eq_get_primary(chain, &left) ) return false;
+    if ( !eq_get_primary(chain, left) ) goto fallback;
 
     struct eq_elem *elem = *chain;
 
     while ( true ) {
-        if ( elem == NULL ) {
-            *out = left;
-            return true;
-        }
+        if ( elem == NULL ) goto good_exit;
 
         if ( elem->type == EQ_OP ) {
             if ( elem->data.op == EQ_OP_MUL ) {
                 *chain = list_get_next(elem, eq_elem_chain);
-                if ( !eq_get_primary(chain, &right) ) return false;
-                if ( ckd_mul(&left, left, right) ) {
-                    errno = ERANGE;
-                    return false;
-                }
+                if ( !eq_get_primary(chain, right) ) goto fallback;
+                mpz_mul(left, left, right);
                 elem = *chain;
             } else {
-                *out = left;
-                return true;
+                goto good_exit;
             }
         } else if ( elem->type == EQ_BR ) {
             assert(elem->data.br == EQ_BR_R);
-            *out = left;
-            return true;
+            goto good_exit;
         } else {
             errno = EILSEQ;
-            return false;
+            goto fallback;
         }
     }
+
+good_exit:
+    mpz_set(out, left);
+    mpz_clears(left, right, NULL);
+    return true;
+fallback:
+    mpz_clears(left, right, NULL);
+    return false;
 }
 
-static bool eq_get_expression(struct eq_elem **chain, intmax_t *out) {
+static int eq_get_expression(struct eq_elem **chain, mpz_t out) {
     assert(chain);
 
-    intmax_t left, right;
+    mpz_t left, right;
+    mpz_inits(left, right, NULL);
 
-    if ( !eq_get_term(chain, &left) ) return false;
+    if ( !eq_get_term(chain, left) ) goto fallback;
 
     struct eq_elem *elem = *chain;
 
     while ( true ) {
-        if ( elem == NULL ) {
-            *out = left;
-            return true;
-        }
+        if ( elem == NULL ) goto good_exit;
 
         if ( elem->type == EQ_OP ) {
             if ( elem->data.op == EQ_OP_SUM ) {
                 *chain = list_get_next(elem, eq_elem_chain);
-                if ( !eq_get_term(chain, &right) ) return false;
-                if ( ckd_add(&left, left, right) ) {
-                    errno = ERANGE;
-                    return false;
-                }
+                if ( !eq_get_term(chain, right) ) goto fallback;
+                mpz_add(left, left, right);
                 elem = *chain;
             } else if ( elem->data.op == EQ_OP_SUB ) {
                 *chain = list_get_next(elem, eq_elem_chain);
-                if ( !eq_get_term(chain, &right) ) return false;
-                if ( ckd_sub(&left, left, right) ) {
-                    errno = ERANGE;
-                    return false;
-                }
+                if ( !eq_get_term(chain, right) ) goto fallback;
+                mpz_sub(left, left, right);
                 elem = *chain;
             } else {
-                *out = left;
-                return true;
+                goto good_exit;
             }
         } else if ( elem->type == EQ_BR ) {
             assert(elem->data.br == EQ_BR_R);
-            *out = left;
-            return true;
+            goto good_exit;
         } else {
             errno = EILSEQ;
-            return false;
+            goto fallback;
         }
     }
+
+good_exit:
+    mpz_set(out, left);
+    mpz_clears(left, right, NULL);
+    return true;
+
+fallback:
+    mpz_clears(left, right, NULL);
+    return false;
 }
 
-static size_t int_digit_nr(int val) {
-    if ( val == 0 ) return 1;
+static size_t int_len(const mpz_t val) {
+    if ( mpz_cmp_ui(val, 0u) == 0 ) return 1;
 
     size_t len = 0;
-    while ( val != 0 ) {
-        val /= 10;
-        len++;   // Overflow is impossible
+
+    mpz_t t;
+
+    if ( mpz_sgn(val) == -1 ) {
+        len = 1;
+        mpz_init(t);
+        mpz_abs(t, val);
+    } else {
+        mpz_init_set(t, val);
     }
 
+    while ( mpz_cmp_ui(t, 0u) != 0 ) {
+        mpz_fdiv_q_ui(t, t, 10u);
+        if ( ckd_add(&len, len, 1) ) {
+            mpz_clear(t);
+            return 0;
+        }
+    }
+
+    mpz_clear(t);
     return len;
 }
 
@@ -408,21 +449,14 @@ static size_t eq_calc_str_size(const struct eq *eq) {
         } else if ( iter->type == EQ_OP ) {
             if ( ckd_add(&res, res, 1) ) goto fail;
         } else if ( iter->type == EQ_NR ) {
-            if ( iter->data.nr < 0 ) {
-                assert(0);   // Negative values unsupported
-                goto fail;
-            } else {
-                size_t intlen = int_digit_nr(iter->data.nr);
-                if ( ckd_add(&res, res, intlen) ) goto fail;
-            }
-        } else {
-            assert(0);
-            goto fail;
+            size_t intlen = int_len(iter->data.nr);
+                
+            if ( intlen == 0 ) goto fail;
+            if ( ckd_add(&res, res, intlen) ) goto fail;
         }
     }
 
     return res;
-
 fail:
     return 0;
 }
@@ -439,9 +473,7 @@ static size_t eq_elem_print(const struct eq_elem *elem, char *buf) {
         }
         return 1;
     } else if ( elem->type == EQ_NR ) {
-        assert(elem->data.nr >= 0);
-        sprintf(buf, "%d", elem->data.nr);
-        return int_digit_nr(elem->data.nr);
+        return gmp_sprintf(buf, "%Zd", elem->data.nr);
     } else if ( elem->type == EQ_OP ) {
         switch ( elem->data.op ) {
             case EQ_OP_SUM: buf[0] = '+'; return 1;
@@ -455,7 +487,7 @@ static size_t eq_elem_print(const struct eq_elem *elem, char *buf) {
     }
 }
 
-bool eq_print(const struct eq *eq, char *buffer) {
+int eq_print(const struct eq *eq, char *buffer) {
     assert(eq);
     assert(eq->eq_elems);
     size_t index = 0;
@@ -474,18 +506,20 @@ size_t eq_print_buffer_size(const struct eq *eq) {
     return eq_calc_str_size(eq);
 }
 
-bool eq_solve(const struct eq *eq, intmax_t *out) {
+int eq_solve(const struct eq *eq, mpz_t out) {
     assert(eq);
     assert(eq->eq_elems);
     struct eq_elem *chain = eq->eq_elems;
     return eq_get_expression(&chain, out);
 }
 
-void eq_destroy(struct eq *eq) {
+void eq_destroy(struct eq * eq) {
     if ( eq == NULL ) return;
 
     assert(eq->eq_elems);
 
-    list_foreach_safe(eq->eq_elems, eq_elem_chain, iter) free(iter);
+    list_foreach_safe(eq->eq_elems, eq_elem_chain, iter) {
+        eq_elem_destroy(iter);
+    }
     free(eq);
 }

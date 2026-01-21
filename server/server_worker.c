@@ -1,8 +1,8 @@
 #include "server_worker.h"
-#include <signal.h>
 #include <assert.h>
 #include <errno.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +10,7 @@
 #include <sys/fcntl.h>
 #include <sys/timerfd.h>
 #include <unistd.h>
+#include "bstream.h"
 #include "listc.h"
 #include "log.h"
 
@@ -22,8 +23,7 @@ struct client {
     struct plot *plot;
     struct plot_task *current_task;
     struct question *current_question;
-    size_t bytes_total;
-    size_t bytes_sent;
+    struct bstream *send_stream;
 };
 
 struct client_timer {
@@ -78,49 +78,12 @@ static void client_timer_destroy(struct server_worker *worker, struct client_tim
 
     epoll_ctl(worker->epfd, EPOLL_CTL_DEL, timer->timerfd, NULL);
     close(timer->timerfd);
-    listc_remove_item(timer->client, timers, timer, timers_ring);
+    listc_remove_item(&timer->client->timers, timer, timers_ring);
     free(timer->event);
     free(timer);
 }
 
-static void client_disconnect(struct server_worker *worker, struct client *client) {
-    assert(worker);
-    assert(client);
-
-    pthread_mutex_lock(&worker->clients_mtx);
-    assert(worker->clients);
-
-    listc_remove_item(worker, clients, client, client_ring);
-    epoll_ctl(worker->epfd, EPOLL_CTL_DEL, client->sockfd, NULL);
-    close(client->sockfd);   // This call also deletes sockfd from epoll list
-    free(client->event);
-    worker->clients_nr--;
-    pthread_mutex_unlock(&worker->clients_mtx);
-
-
-    if ( client->timers != NULL ) {
-        struct client_timer *iter = client->timers;
-        do {
-            struct client_timer *next = listc_get_next(iter, timers_ring);
-            client_timer_destroy(worker, iter);
-            iter = next;
-        } while ( client->timers );
-    }
-
-    assert(client->plot);
-    plot_destroy(client->plot);
-
-    if ( client->current_task != NULL )   // Possibly we haven't given any task for this client
-        plot_task_destroy(client->current_task);
-
-    if ( client->current_question != NULL ) question_destroy(client->current_question);
-
-    free(client);
-}
-
 static int client_timer_setup(struct server_worker *worker, struct client *client, unsigned long msec_timeout) {
-    assert(worker);
-    assert(client);
     assert(msec_timeout > 0);
 
     struct client_timer *timer = malloc(sizeof(struct client_timer));
@@ -143,7 +106,7 @@ static int client_timer_setup(struct server_worker *worker, struct client *clien
     if ( epoll_ctl(worker->epfd, EPOLL_CTL_ADD, timer->timerfd, &ev) ) goto close_timerfd;
 
     listc_init(timer, timers_ring);
-    listc_add_item_back(client, timers, timer, timers_ring);
+    listc_add_item_back(&client->timers, timer, timers_ring);
 
     time_t secs = msec_timeout / 1000;
     unsigned long nsecs = (msec_timeout % 1000) * 1000000;
@@ -166,9 +129,104 @@ free_timer:
     return -1;
 }
 
+static struct client *client_create(struct server_worker *wr, int clientfd, plot_constructor_t pc) {
+    struct client *cl = malloc(sizeof(struct client));
+    if ( cl == NULL ) return NULL;
+
+    cl->plot = pc();
+    if ( cl->plot == NULL ) goto free_cl;
+
+    cl->send_stream = bstream_create();
+    if ( cl->send_stream == NULL ) goto destroy_plot;
+
+    int old_fl = fcntl(clientfd, F_GETFL);
+    fcntl(clientfd, F_SETFL, O_NONBLOCK);   // this action doesn't raise error
+    cl->sockfd = clientfd;
+
+    listc_init(cl, client_ring);
+    cl->current_question = NULL;
+    cl->current_task = NULL;
+    cl->event = NULL;
+    cl->timers = NULL;
+
+    
+    // Event creation
+    struct server_worker_event *event = malloc(sizeof(struct server_worker_event));
+    if ( event == NULL ) goto destroy_cl;
+
+    cl->event = event;
+    event->data.client = cl;
+    event->type = SWET_CLIENT;
+
+    struct epoll_event ev = {.events = EPOLLRDHUP, .data.ptr = event};
+
+    pthread_mutex_lock(&wr->clients_mtx);
+
+    if ( epoll_ctl(wr->epfd, EPOLL_CTL_ADD, cl->sockfd, &ev) ) {
+        pthread_mutex_unlock(&wr->clients_mtx);
+        goto free_event;
+    }
+    listc_add_item_back(&wr->clients, cl, client_ring);
+    wr->clients_nr++;
+
+    pthread_mutex_unlock(&wr->clients_mtx);
+
+    log_msg(LOG_DEBUG, "Client %p was created on worker %p\n", cl, wr);
+    return cl;
+
+free_event:
+    free(event);
+destroy_cl:
+    bstream_destroy(cl->send_stream);
+    fcntl(clientfd, F_SETFL, old_fl);
+destroy_plot:
+    plot_destroy(cl->plot);
+free_cl:
+    free(cl);
+    return NULL;
+}
+
+static void client_disconnect(struct server_worker *wr, struct client *cl) {
+    pthread_mutex_lock(&wr->clients_mtx);
+    epoll_ctl(wr->epfd, EPOLL_CTL_DEL, cl->sockfd, NULL);
+    listc_remove_item(&wr->clients, cl, client_ring);
+    wr->clients_nr--;
+    pthread_mutex_unlock(&wr->clients_mtx);
+
+    close(cl->sockfd);
+    free(cl->event);
+    plot_destroy(cl->plot);
+    bstream_destroy(cl->send_stream);
+    if ( cl->current_question ) question_destroy(cl->current_question);
+    if ( cl->current_task ) plot_task_destroy(cl->current_task);
+
+    while ( cl->timers ) client_timer_destroy(wr, cl->timers);
+
+    log_msg(LOG_DEBUG, "Client %p was destroyed\n", cl);
+    free(cl);
+}
+
+static void client_send_task_text(struct client *client, const char *text, unsigned long timeout) {
+    struct bstream *bst = client->send_stream;
+
+    if ( timeout != 0 ) {
+        char buf[256];
+        snprintf(buf, sizeof(buf), "\nAnswer (timeout %lu msec): ", timeout);
+
+        bstream_write_borrow(bst, text, strlen(text));
+        bstream_write_mem(bst, buf, strlen(buf)); //We can't borrow from stack
+    } else {
+        bstream_write_borrow(bst, text, strlen(text));
+        const char extra_text[] = "\nAnswer (no timeout): ";
+        bstream_write_borrow(bst, extra_text, sizeof(extra_text));
+    }
+}
+
 static int client_next_task(struct server_worker *worker, struct client *client) {
     assert(worker);
     assert(client);
+
+    bstream_flush(client->send_stream);
 
     if ( client->current_task != NULL )   // Possibly we haven't given any task for this client
         plot_task_destroy(client->current_task);
@@ -189,46 +247,14 @@ static int client_next_task(struct server_worker *worker, struct client *client)
         .events = EPOLLIN | EPOLLOUT | EPOLLRDHUP
     };   // Poll for EPOLLOUT now
 
+    // Notice that we only modify epoll entry, it must be added before this
     if ( epoll_ctl(worker->epfd, EPOLL_CTL_MOD, client->sockfd, &ev) ) goto destroy_question;
 
     client->current_task = new_task;
     client->current_question = q;
-    client->bytes_total = strlen(question_get_text(q));
-    client->bytes_sent = 0;
+    const char *text = question_get_text(q);
 
-    return 0;
-
-destroy_question:
-    question_destroy(q);
-destroy_plot_task:
-    plot_task_destroy(new_task);
-    return -1;
-}
-
-static int client_first_task(struct server_worker *worker, struct client *client) {
-    assert(worker);
-    assert(client);
-
-    struct plot_task *new_task = plot_get_task(client->plot);
-    if ( new_task == NULL ) {
-        if ( errno != ENOTASK ) { log_msg(LOG_WARN, "Failed to create task for client\n"); }
-        return -1;
-    }
-
-    struct question *q = plot_task_get_question(new_task);
-    if ( q == NULL ) goto destroy_plot_task;
-
-    struct epoll_event ev = {
-        .data.ptr = client->event,
-        .events = EPOLLIN | EPOLLOUT | EPOLLRDHUP
-    };   // Poll for EPOLLOUT now
-
-    if ( epoll_ctl(worker->epfd, EPOLL_CTL_ADD, client->sockfd, &ev) ) goto destroy_question;
-
-    client->current_task = new_task;
-    client->current_question = q;
-    client->bytes_total = strlen(question_get_text(q));
-    client->bytes_sent = 0;
+    client_send_task_text(client, text, plot_task_get_timeout_msec(new_task));
 
     return 0;
 
@@ -245,17 +271,14 @@ static int client_send_text(struct server_worker *worker, struct client *client)
 
     if ( client->current_question == NULL ) return 0;   // No questions for client now
 
-    const char *text = question_get_text(client->current_question);
+    struct bstream *bst = client->send_stream;
 
-    size_t bytes_to_send = client->bytes_total - client->bytes_sent;
+    ssize_t written = bstream_read_fd(bst, client->sockfd, bstream_len(bst));
+    if ( written == 0 ) log_msg(LOG_WARN, "Failed to send data to clientfd %d\n", client->sockfd);
 
-    ssize_t written = write(client->sockfd, shiftptr(text, client->bytes_sent), bytes_to_send);
-    if ( written == -1 ) return -1;
-
-    if ( (size_t)written < bytes_to_send ) {
-        client->bytes_sent += written;
-    } else {
-        question_destroy(client->current_question);
+    if ( bstream_len(bst) == 0 ) {
+        // bstream_flush(client->send_stream);   // We don't want to flush the buffer because it alredy has zero len
+        question_destroy(client->current_question); //We can destroy question, because now bst doesn't borrow anything
         client->current_question = NULL;
 
         struct epoll_event ev = {.data.ptr = client->event, .events = EPOLLIN | EPOLLRDHUP};
@@ -280,6 +303,7 @@ static void *worker_handler(void *arg) {
     struct epoll_event ev;
 
     while ( true ) {
+        int res;
         pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 
         /*
@@ -288,7 +312,7 @@ static void *worker_handler(void *arg) {
          * ATTENTION!!!
          */
 retry:
-        int res = epoll_wait(w->epfd, &ev, 1, -1);
+        res = epoll_wait(w->epfd, &ev, 1, -1);
         if ( res == -1 ) {
             if ( errno == EINTR ) goto retry;
         }
@@ -307,9 +331,13 @@ retry:
 
             assert(client->current_task);
             if ( plot_task_check_fd(client->current_task, client->sockfd) != ANSWER_RIGHT ) {
+                log_msg(LOG_DEBUG, "Client %p was disconnected because of the timeout\n", client);
                 client_disconnect(w, client);
             } else {
-                client_next_task(w, client);
+                if ( client_next_task(w, client) ) {
+                    client_disconnect(w, client);
+                    continue;
+                }
             }
         } else if ( event->type == SWET_CLIENT ) {
             struct client *client = event->data.client;
@@ -319,6 +347,7 @@ retry:
                     enum answer_state res = plot_task_check_fd(client->current_task, client->sockfd);
 
                     if ( res == ANSWER_WRONG ) {
+                        log_msg(LOG_DEBUG, "Client %p was disconnected because of wrong answer\n", client);
                         client_disconnect(w, client);
                         continue;
                     } else if ( res == ANSWER_MORE ) {
@@ -336,12 +365,14 @@ retry:
 
             if ( ev.events & EPOLLOUT ) {
                 if ( client_send_text(w, client) ) {
+                    log_msg(LOG_DEBUG, "Client %p was disconnected because of sending problem\n", client);
                     client_disconnect(w, client);
                     continue;
                 }
             }
 
             if ( ev.events & EPOLLRDHUP ) {
+                log_msg(LOG_DEBUG, "Client %p disconnected\n", client);
                 client_disconnect(w, client);
                 continue;
             }
@@ -355,6 +386,8 @@ struct server_worker *server_worker_create() {
     struct server_worker *worker = malloc(sizeof(struct server_worker));
     if ( worker == NULL ) return NULL;
 
+    worker->clients_nr = 0;
+
     worker->clients = NULL;
 
     worker->epfd = epoll_create1(0);
@@ -364,6 +397,7 @@ struct server_worker *server_worker_create() {
 
     if ( pthread_create(&worker->thread, NULL, worker_handler, worker) ) goto destroy_mtx;
 
+    log_msg(LOG_DEBUG, "Worker %p was created\n", worker);
     return worker;
 
 destroy_mtx:
@@ -378,51 +412,20 @@ free_worker:
 int server_worker_add_client(struct server_worker *worker, int clientfd, plot_constructor_t pc) {
     assert(worker);
 
-    struct client *client = malloc(sizeof(struct client));
+    struct client *client = client_create(worker, clientfd, pc);
     if ( client == NULL ) return -1;
 
-    struct server_worker_event *event = malloc(sizeof(struct server_worker_event));
-    if ( event == NULL ) goto free_client;
-
-    event->type = SWET_CLIENT;
-    event->data.client = client;
-    client->event = event;
-
-    client->plot = pc();
-    if ( client->plot == NULL ) goto free_event;
-    client->current_task = NULL;
-    client->current_question = NULL;
-    client->bytes_total = 0;
-    client->bytes_sent = 0;
-
-    client->timers = NULL;
-
-    fcntl(clientfd, F_SETFL, O_NONBLOCK);
-    client->sockfd = clientfd;
-
-    listc_init(client, client_ring);
-
-    pthread_mutex_lock(&worker->clients_mtx);
-    listc_add_item_back(worker, clients, client, client_ring);
-    worker->clients_nr++;
-    pthread_mutex_unlock(&worker->clients_mtx);
-
-    if ( client_first_task(worker, client) ) {
+    if ( client_next_task(worker, client) ) {
         client_disconnect(worker, client);
         return -1;
     }
 
     return 0;
-
-free_event:
-    free(event);
-free_client:
-    free(client);
-    return -1;
 }
 
 unsigned server_worker_get_clients_nr(struct server_worker *worker) {
     assert(worker);
+
 
     pthread_mutex_lock(&worker->clients_mtx);   // We can use atomics instead of this lock
     unsigned res = worker->clients_nr;
@@ -441,5 +444,7 @@ void server_worker_destroy(struct server_worker *worker) {
     while ( worker->clients != NULL ) { client_disconnect(worker, worker->clients); }
 
     pthread_mutex_destroy(&worker->clients_mtx);
+
+    log_msg(LOG_DEBUG, "Worker %p was destroyed\n", worker);
     free(worker);
 }

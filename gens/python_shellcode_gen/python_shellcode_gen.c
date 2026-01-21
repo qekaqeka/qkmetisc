@@ -4,6 +4,7 @@
 #include "utils.h"
 #include "rcmem.h"
 #include <assert.h>
+#include <stdbool.h>
 #include <string.h>
 
 #define ANSWER_LEN 32

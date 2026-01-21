@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 4.0.0)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS YES)
-set(CMAKE_C_STANDARD 23)
+set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED YES)
 
-project(trollcalc)
+project(qkmetisc)
 
 if ( PROJECT_IS_TOP_LEVEL )
     file(CREATE_LINK
@@ -21,12 +21,13 @@ include_directories(include)
 add_subdirectory(utils)
 add_subdirectory(list)
 add_subdirectory(listc)
-add_subdirectory(rcmem)
+add_subdirectory(bstream)
 add_subdirectory(log)
+add_subdirectory(rcmem)
 add_subdirectory(gens)
 add_subdirectory(plots)
+add_subdirectory(cli)
 add_subdirectory(server)
-add_subdirectory(test)
 
-add_executable(trollcalc main.c)
-target_link_libraries(trollcalc PRIVATE server troll_eq_plot log)
+add_executable(qkmetisc main.c)
+target_link_libraries(qkmetisc PRIVATE server troll_eq_plot log cli)

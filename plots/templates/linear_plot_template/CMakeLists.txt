@@ -1,0 +1,4 @@
+add_library(linear_plot_template STATIC linear_plot_template.c)
+
+target_link_libraries(linear_plot_template PUBLIC plot)
+target_link_libraries(linear_plot_template PRIVATE utils list)

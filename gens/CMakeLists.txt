@@ -1,4 +1,4 @@
-include_directories(.)
+include_directories("${CMAKE_CURRENT_SOURCE_DIR}")
 
 add_library(gen STATIC gen.c)
 
@@ -10,3 +10,4 @@ file(CREATE_LINK
 
 add_subdirectory(eq_gen)
 add_subdirectory(python_shellcode_gen)
+add_subdirectory(echo_gen)

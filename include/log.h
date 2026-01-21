@@ -1,1 +1,1 @@
-/home/qeka/projects/ctftasks/trollcalc/log/log.h
+/home/qeka/projects/ctftasks/qkmetisc/log/log.h

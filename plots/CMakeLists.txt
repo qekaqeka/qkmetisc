@@ -10,3 +10,4 @@ file(CREATE_LINK
 )
 
 add_subdirectory(troll_eq_plot)
+add_subdirectory(templates)

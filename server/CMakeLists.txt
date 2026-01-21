@@ -4,7 +4,7 @@ add_library(server STATIC
     server_worker_pool.c
 )
 
-target_link_libraries(server PRIVATE plot log listc utils gen pthread_assert)
+target_link_libraries(server PRIVATE plot log listc utils gen pthread_assert bstream)
 target_compile_options(server PRIVATE -pthread)
 
 file(CREATE_LINK

@@ -1,7 +1,7 @@
 #define _GNU_SOURCE
-#include <errno.h>
 #include "server.h"
 #include <assert.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <pthread.h>
@@ -53,23 +53,23 @@ static void *server_main_thread_loop(void *arg) {
     struct epoll_event ev;
 
     while ( true ) {
+        int res;
         pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
-
         /*
          * ATTENTION!!!
          * epoll_wait doesn't have to be a cancellation point. It is now, but it could change in the future
          * ATTENTION!!!
          */
 retry:
-        int res = epoll_wait(serv->epfd, &ev, 1, -1);
+        res = epoll_wait(serv->epfd, &ev, 1, -1);
         if ( res == -1 ) {
             if ( errno == EINTR ) goto retry;
         }
-        assert(res != -1);
+        assert(res != -1);   // No error, but EINTR
 
         pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
-        pthread_mutex_lock(&serv->plot_sockets_mtx);
 
+        pthread_mutex_lock(&serv->plot_sockets_mtx);
         struct plot_socket *ps = ev.data.ptr;
 
         if ( !ps->active ) {   // Plot socket is going to destroy
@@ -78,7 +78,8 @@ retry:
             continue;
         }
 
-        // If we did cleanup before ps active check, we'd cleared our ps if it is inactive, which cause to UAF
+        // If we had done cleanup before ps active check, we'd have cleared our ps if it is inactive, which cause to UAF
+        // Here we cleanup inactive plot sockets, if the current plot socket is active
         server_cleanup_inactive_plot_sockets(serv);
 
         assert(ev.events == EPOLLIN);
@@ -92,6 +93,9 @@ retry:
 
         if ( server_worker_pool_add_client(serv->pool, clientfd, ps->pc) ) {
             log_msg(LOG_WARN, "Failed to bind client\n");
+            close(clientfd);
+            pthread_mutex_unlock(&serv->plot_sockets_mtx);
+            continue;
         }
 
         log_msg(LOG_INFO, "New connection\n");
@@ -102,7 +106,7 @@ retry:
     pthread_exit(NULL);
 }
 
-extern struct server *server_create(unsigned wq_workers_nr) {
+struct server *server_create(unsigned wq_workers_nr) {
     struct server *server = malloc(sizeof(struct server));
     if ( server == NULL ) return NULL;
 
@@ -120,7 +124,7 @@ extern struct server *server_create(unsigned wq_workers_nr) {
 
     if ( pthread_create(&server->main_thread, NULL, server_main_thread_loop, server) ) goto close_epfd;
 
-
+    log_msg(LOG_DEBUG, "Server %p was created\n", server);
     return server;
 
 close_epfd:
@@ -136,7 +140,7 @@ free_server:
     return NULL;
 }
 
-extern int server_add_plot(struct server *server, plot_constructor_t pc, unsigned short port) {
+int server_add_plot(struct server *server, plot_constructor_t pc, unsigned short port) {
     struct plot_socket *ps = malloc(sizeof(struct plot_socket));
     if ( ps == NULL ) return -1;
 
@@ -147,11 +151,7 @@ extern int server_add_plot(struct server *server, plot_constructor_t pc, unsigne
     int sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if ( sockfd == -1 ) goto free_ps;
 
-    struct sockaddr_in sin = {
-        .sin_addr = {INADDR_ANY},
-        .sin_port = htons(port),
-        .sin_family = AF_INET
-    };
+    struct sockaddr_in sin = {.sin_addr = {INADDR_ANY}, .sin_port = htons(port), .sin_family = AF_INET};
 
     if ( bind(sockfd, &sin, sizeof(sin)) ) goto close_sockfd;
 
@@ -161,19 +161,22 @@ extern int server_add_plot(struct server *server, plot_constructor_t pc, unsigne
 
     pthread_mutex_lock(&server->plot_sockets_mtx);
 
-    struct epoll_event ev = {
-        .data.ptr = ps,
-        .events = EPOLLIN
-    };
+    struct epoll_event ev = {.data.ptr = ps, .events = EPOLLIN};
 
     if ( epoll_ctl(server->epfd, EPOLL_CTL_ADD, ps->sockfd, &ev) ) {
         pthread_mutex_unlock(&server->plot_sockets_mtx);
         goto close_sockfd;
     }
 
-    listc_add_item_back(server, plot_sockets, ps, plot_socket_ring);
+    listc_add_item_back(&server->plot_sockets, ps, plot_socket_ring);
     pthread_mutex_unlock(&server->plot_sockets_mtx);
 
+    socklen_t scl = sizeof(sin);
+    if ( getsockname(sockfd, &sin, &scl) ) { //get real port number
+        log_msg(LOG_WARN, "Failed to retrieve socket information\n");
+    } else {
+        log_msg(LOG_INFO, "Plot socket on port %hu was created\n", ntohs(sin.sin_port));
+    }
     return 0;
 
 close_sockfd:
@@ -183,7 +186,7 @@ free_ps:
     return -1;
 }
 
-extern int server_remove_plot(struct server *server, unsigned short port) {
+int server_remove_plot(struct server *server, unsigned short port) {
     assert(server);
 
     pthread_mutex_lock(&server->plot_sockets_mtx);
@@ -195,10 +198,10 @@ extern int server_remove_plot(struct server *server, unsigned short port) {
                 close(iter->sockfd);
                 iter->sockfd = -1;
                 iter->active = false;
-                listc_remove_item(server, plot_sockets, iter, plot_socket_ring);
+                listc_remove_item(&server->plot_sockets, iter, plot_socket_ring);
 
                 pthread_mutex_lock(&server->inactive_plot_sockets_mtx);
-                listc_add_item_back(server, inactive_plot_sockets, iter, plot_socket_ring);
+                listc_add_item_back(&server->inactive_plot_sockets, iter, plot_socket_ring);
                 pthread_mutex_unlock(&server->inactive_plot_sockets_mtx);
 
                 pthread_mutex_unlock(&server->plot_sockets_mtx);
@@ -211,15 +214,15 @@ extern int server_remove_plot(struct server *server, unsigned short port) {
     return -1;
 }
 
-extern void server_destroy(struct server *server) {
+void server_destroy(struct server *server) {
     assert(server);
 
     pthread_cancel(server->main_thread);
     pthread_join(server->main_thread, NULL);
-    //Now we have an exclusive access to this object
+    // Now we have an exclusive access to this object
 
     server_worker_pool_destroy(server->pool);
-    
+
     server_cleanup_inactive_plot_sockets(server);
 
     pthread_mutex_destroy(&server->plot_sockets_mtx);

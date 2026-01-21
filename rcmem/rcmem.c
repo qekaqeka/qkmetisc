@@ -1,8 +1,8 @@
 #include "rcmem.h"
 #include <stdlib.h>
 #include <assert.h>
+#include "log.h"
 #include "utils.h"
-#include <stdckdint.h>
 
 struct rcmem_hdr {
     unsigned counter;
@@ -28,7 +28,12 @@ extern void *rcmem_alloc(size_t size) {
 
 extern void *rcmem_take(void *mem) {
     struct rcmem *m = containerof(struct rcmem, mem, mem_start);
-    m->hdr.counter++;
+
+    if ( ckd_add(&m->hdr.counter, m->hdr.counter, 1u) ) {
+        log_msg(LOG_CRITICAL, "Reference counted memory on %p overflowed its reference counter\n", mem);
+        assert(0);
+    }
+
     return rcmem_get_mem(m);
 }
 
