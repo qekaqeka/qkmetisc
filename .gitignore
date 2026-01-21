@@ -3,3 +3,4 @@ build-release/
 .cache/
 .nvim.lua
 compile_commands.json
+/include/**
